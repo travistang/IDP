@@ -77,8 +77,8 @@ def main():
 
 
 def train(args):
-    datasets = [i for i in range(5)]
-    # datasets = [1, 2]
+    # datasets = [i for i in range(5)]
+    datasets = [1, 2, 3]
     # Remove the leave out dataset from the datasets
     datasets.remove(args.leaveDataset)
 
