@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--input_size', type=int, default=2)
     parser.add_argument('--output_size', type=int, default=5)
     # RNN size parameter (dimension of the output/hidden state)
-    parser.add_argument('--rnn_size', type=int, default=256,
+    parser.add_argument('--rnn_size', type=int, default=128,
                         help='size of RNN hidden state')
     # Size of each batch parameter
     parser.add_argument('--batch_size', type=int, default=8,
@@ -55,7 +55,7 @@ def main():
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout probability')
     # Dimension of the embeddings parameter
-    parser.add_argument('--embedding_size', type=int, default=128,
+    parser.add_argument('--embedding_size', type=int, default=64,
                         help='Embedding dimension for the spatial coordinates')
     # Size of neighborhood to be considered parameter
     parser.add_argument('--neighborhood_size', type=int, default=32,
@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--leaveDataset', type=int, default=3,
                         help='The dataset index to be left out in training')
     # Lambda regularization parameter (L2)
-    parser.add_argument('--lambda_param', type=float, default=0.0001,
+    parser.add_argument('--lambda_param', type=float, default=0.0005,
                         help='L2 regularization parameter')
 
     parser.add_argument('--use_cuda', action="store_true", default=False,
@@ -115,7 +115,7 @@ def train(args):
         net = net.cuda()
 
     # optimizer = torch.optim.RMSprop(net.parameters(), lr=args.learning_rate)
-    optimizer = torch.optim.Adagrad(net.parameters())
+    optimizer = torch.optim.Adagrad(net.parameters(), weight_decay=args.lambda_param)
     learning_rate = args.learning_rate
 
     print('Training begin')
