@@ -104,7 +104,7 @@ def getGridMaskInference(frame, dimensions, neighborhood_size, grid_size):
 
     return frame_mask
 
-def getSequenceGridMask(sequence, dimensions, neighborhood_size, grid_size):
+def getSequenceGridMask(sequence, dimensions, neighborhood_size, grid_size, using_cuda):
     '''
     Get the grid masks for all the frames in the sequence
     params:
@@ -112,12 +112,16 @@ def getSequenceGridMask(sequence, dimensions, neighborhood_size, grid_size):
     dimensions : This will be a list [width, height]
     neighborhood_size : Scalar value representing the size of neighborhood considered
     grid_size : Scalar value representing the size of the grid discretization
+    using_cuda: Boolean value denoting if using GPU or not
     '''
     sl = len(sequence)
     sequence_mask = []
 
     for i in range(sl):
         # sequence_mask[i, :, :, :] = getGridMask(sequence[i, :, :], dimensions, neighborhood_size, grid_size)
-        sequence_mask.append(Variable(torch.from_numpy(getGridMask(sequence[i], dimensions, neighborhood_size, grid_size)).float()).cuda())
+        mask = Variable(torch.from_numpy(getGridMask(sequence[i], dimensions, neighborhood_size, grid_size)).float())
+        if using_cuda:
+            mask = mask.cuda()
+        sequence_mask.append(mask)
 
     return sequence_mask

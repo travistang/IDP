@@ -41,11 +41,15 @@ def main():
     parser.add_argument('--epoch', type=int, default=49,
                         help='Epoch of model to be loaded')
 
+    parser.add_argument('--use_cuda', action="store_true", default=False,
+                        help='Use GPU or not')
+
     # Parse the parameters
     sample_args = parser.parse_args()
 
     # Save directory
     save_directory = 'save/' + str(sample_args.test_dataset) + '/'
+    # save_directory = 'save/3/'
 
     # Define the path for the config file for saved args
     with open(os.path.join(save_directory, 'config.pkl'), 'rb') as f:
@@ -53,7 +57,8 @@ def main():
 
     # Initialize net
     net = SocialLSTM(saved_args, True)
-    net.cuda()
+    if sample_args.use_cuda:        
+        net = net.cuda()
 
     # Get the checkpoint path
     checkpoint_path = os.path.join(save_directory, 'social_lstm_model_'+str(sample_args.epoch)+'.tar')
@@ -100,14 +105,16 @@ def main():
             dimensions = [720, 576]
 
         # Get the grid masks for the sequence
-        grid_seq = getSequenceGridMask(x_seq, dimensions, saved_args.neighborhood_size, saved_args.grid_size)
+        grid_seq = getSequenceGridMask(x_seq, dimensions, saved_args.neighborhood_size, saved_args.grid_size, sample_args.use_cuda)
 
         # Construct ST graph
         stgraph.readGraph(x)
 
         # Get nodes and nodesPresent
         nodes, _, nodesPresent, _ = stgraph.getSequence(0)
-        nodes = Variable(torch.from_numpy(nodes).float(), volatile=True).cuda()
+        nodes = Variable(torch.from_numpy(nodes).float(), volatile=True)
+        if sample_args.use_cuda:
+            nodes = nodes.cuda()
 
         # Extract the observed part of the trajectories
         obs_nodes, obs_nodesPresent, obs_grid = nodes[:sample_args.obs_length], nodesPresent[:sample_args.obs_length], grid_seq[:sample_args.obs_length]
@@ -116,7 +123,7 @@ def main():
         ret_nodes = sample(obs_nodes, obs_nodesPresent, obs_grid, sample_args, net, nodes, nodesPresent, grid_seq, saved_args, dimensions)
 
         # Record the mean and final displacement error
-        total_error += get_mean_error(ret_nodes[sample_args.obs_length:].data, nodes[sample_args.obs_length:].data, nodesPresent[sample_args.obs_length-1], nodesPresent[sample_args.obs_length:])
+        total_error += get_mean_error(ret_nodes[sample_args.obs_length:].data, nodes[sample_args.obs_length:].data, nodesPresent[sample_args.obs_length-1], nodesPresent[sample_args.obs_length:], sample_args.use_cuda)
         final_error += get_final_error(ret_nodes[sample_args.obs_length:].data, nodes[sample_args.obs_length:].data, nodesPresent[sample_args.obs_length-1], nodesPresent[sample_args.obs_length:])
 
         end = time.time()
@@ -154,8 +161,12 @@ def sample(nodes, nodesPresent, grid, args, net, true_nodes, true_nodesPresent, 
     numNodes = nodes.size()[1]
 
     # Construct variables for hidden and cell states
-    hidden_states = Variable(torch.zeros(numNodes, net.args.rnn_size), volatile=True).cuda()
-    cell_states = Variable(torch.zeros(numNodes, net.args.rnn_size), volatile=True).cuda()
+    hidden_states = Variable(torch.zeros(numNodes, net.args.rnn_size), volatile=True)
+    if args.use_cuda:
+        hidden_states = hidden_states.cuda()
+    cell_states = Variable(torch.zeros(numNodes, net.args.rnn_size), volatile=True)
+    if args.use_cuda:
+        cell_states = cell_states.cuda()
 
     # For the observed part of the trajectory
     for tstep in range(args.obs_length-1):
@@ -164,7 +175,9 @@ def sample(nodes, nodesPresent, grid, args, net, true_nodes, true_nodesPresent, 
         # loss_obs = Gaussian2DLikelihood(out_obs, nodes[tstep+1].view(1, numNodes, 2), [nodesPresent[tstep+1]])
 
     # Initialize the return data structure
-    ret_nodes = Variable(torch.zeros(args.obs_length+args.pred_length, numNodes, 2), volatile=True).cuda()
+    ret_nodes = Variable(torch.zeros(args.obs_length+args.pred_length, numNodes, 2), volatile=True)
+    if args.use_cuda:
+        ret_nodes = ret_nodes.cuda()
     ret_nodes[:args.obs_length, :, :] = nodes.clone()
 
     # Last seen grid
@@ -186,13 +199,17 @@ def sample(nodes, nodesPresent, grid, args, net, true_nodes, true_nodesPresent, 
         ret_nodes[tstep + 1, :, 1] = next_y
 
         # List of nodes at the last time-step (assuming they exist until the end)
-        list_of_nodes = Variable(torch.LongTensor(nodesPresent[args.obs_length-1]), volatile=True).cuda()
+        list_of_nodes = Variable(torch.LongTensor(nodesPresent[args.obs_length-1]), volatile=True)
+        if args.use_cuda:
+            list_of_nodes = list_of_nodes.cuda()
         # Get their predicted positions
         current_nodes = torch.index_select(ret_nodes[tstep+1], 0, list_of_nodes)
 
         # Compute the new grid masks with the predicted positions
         prev_grid = getGridMaskInference(current_nodes.data.cpu().numpy(), dimensions, saved_args.neighborhood_size, saved_args.grid_size)
-        prev_grid = Variable(torch.from_numpy(prev_grid).float(), volatile=True).cuda()
+        prev_grid = Variable(torch.from_numpy(prev_grid).float(), volatile=True)
+        if args.use_cuda:
+            prev_grid = prev_grid.cuda()
 
     return ret_nodes
 

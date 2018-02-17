@@ -25,6 +25,7 @@ class SocialLSTM(nn.Module):
 
         self.args = args
         self.infer = infer
+        self.use_cuda = args.use_cuda
 
         if infer:
             # Test time
@@ -65,7 +66,9 @@ class SocialLSTM(nn.Module):
         # Number of peds
         numNodes = grid.size()[0]
         # Construct the variable
-        social_tensor = Variable(torch.zeros(numNodes, self.grid_size*self.grid_size, self.rnn_size).cuda())
+        social_tensor = Variable(torch.zeros(numNodes, self.grid_size*self.grid_size, self.rnn_size))
+        if self.use_cuda:
+            social_tensor = social_tensor.cuda()
         # For each ped
         for node in range(numNodes):
             # Compute the social tensor
@@ -94,7 +97,9 @@ class SocialLSTM(nn.Module):
         numNodes = nodes.size()[1]
 
         # Construct the output variable
-        outputs = Variable(torch.zeros(self.seq_length * numNodes, self.output_size)).cuda()
+        outputs = Variable(torch.zeros(self.seq_length * numNodes, self.output_size))
+        if self.use_cuda:            
+            outputs = outputs.cuda()
 
         # For each frame in the sequence
         for framenum in range(self.seq_length):
@@ -106,7 +111,9 @@ class SocialLSTM(nn.Module):
                 continue
 
             # List of nodes
-            list_of_nodes = Variable(torch.LongTensor(nodeIDs).cuda())
+            list_of_nodes = Variable(torch.LongTensor(nodeIDs))
+            if self.use_cuda:
+                list_of_nodes = list_of_nodes.cuda()
 
             # Select the corresponding input positions
             nodes_current = torch.index_select(nodes[framenum], 0, list_of_nodes)
@@ -140,7 +147,9 @@ class SocialLSTM(nn.Module):
             cell_states[list_of_nodes.data] = c_nodes
 
         # Reshape outputs
-        outputs_return = Variable(torch.zeros(self.seq_length, numNodes, self.output_size).cuda())
+        outputs_return = Variable(torch.zeros(self.seq_length, numNodes, self.output_size))
+        if self.use_cuda:
+            outputs_return = outputs_return.cuda()
         for framenum in range(self.seq_length):
             for node in range(numNodes):
                 outputs_return[framenum, node, :] = outputs[framenum*numNodes + node, :]

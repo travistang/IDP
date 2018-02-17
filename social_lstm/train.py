@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--input_size', type=int, default=2)
     parser.add_argument('--output_size', type=int, default=5)
     # RNN size parameter (dimension of the output/hidden state)
-    parser.add_argument('--rnn_size', type=int, default=128,
+    parser.add_argument('--rnn_size', type=int, default=256,
                         help='size of RNN hidden state')
     # Size of each batch parameter
     parser.add_argument('--batch_size', type=int, default=8,
@@ -35,7 +35,7 @@ def main():
     parser.add_argument('--pred_length', type=int, default=12,
                         help='prediction length')
     # Number of epochs parameter
-    parser.add_argument('--num_epochs', type=int, default=150,
+    parser.add_argument('--num_epochs', type=int, default=1000,
                         help='number of epochs')
     # Frequency at which the model should be saved parameter
     parser.add_argument('--save_every', type=int, default=400,
@@ -52,10 +52,10 @@ def main():
                         help='decay rate for rmsprop')
     # Dropout not implemented.
     # Dropout probability parameter
-    parser.add_argument('--dropout', type=float, default=0,
+    parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout probability')
     # Dimension of the embeddings parameter
-    parser.add_argument('--embedding_size', type=int, default=64,
+    parser.add_argument('--embedding_size', type=int, default=128,
                         help='Embedding dimension for the spatial coordinates')
     # Size of neighborhood to be considered parameter
     parser.add_argument('--neighborhood_size', type=int, default=32,
@@ -69,12 +69,16 @@ def main():
     # Lambda regularization parameter (L2)
     parser.add_argument('--lambda_param', type=float, default=0.0001,
                         help='L2 regularization parameter')
+
+    parser.add_argument('--use_cuda', action="store_true", default=False,
+                        help='Use GPU or not')
     args = parser.parse_args()
     train(args)
 
 
 def train(args):
     datasets = [i for i in range(5)]
+    # datasets = [1, 2]
     # Remove the leave out dataset from the datasets
     datasets.remove(args.leaveDataset)
 
@@ -106,9 +110,12 @@ def train(args):
 
     # Initialize net
     net = SocialLSTM(args)
-    net.cuda()
+    print(net)
+    if args.use_cuda:
+        net = net.cuda()
 
-    optimizer = torch.optim.RMSprop(net.parameters(), lr=args.learning_rate)
+    # optimizer = torch.optim.RMSprop(net.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adagrad(net.parameters())
     learning_rate = args.learning_rate
 
     print('Training begin')
@@ -144,16 +151,22 @@ def train(args):
                     dataset_data = [720, 576]
 
                 # Compute grid masks
-                grid_seq = getSequenceGridMask(x_seq, dataset_data, args.neighborhood_size, args.grid_size)
+                grid_seq = getSequenceGridMask(x_seq, dataset_data, args.neighborhood_size, args.grid_size, args.use_cuda)
 
                 # Get the node features and nodes present from stgraph
                 nodes, _, nodesPresent, _ = stgraph.getSequence(sequence)
 
                 # Construct variables
-                nodes = Variable(torch.from_numpy(nodes).float()).cuda()
+                nodes = Variable(torch.from_numpy(nodes).float())
+                if args.use_cuda:                    
+                    nodes = nodes.cuda()
                 numNodes = nodes.size()[1]
-                hidden_states = Variable(torch.zeros(numNodes, args.rnn_size)).cuda()
-                cell_states = Variable(torch.zeros(numNodes, args.rnn_size)).cuda()
+                hidden_states = Variable(torch.zeros(numNodes, args.rnn_size))
+                if args.use_cuda:                    
+                    hidden_states = hidden_states.cuda()
+                cell_states = Variable(torch.zeros(numNodes, args.rnn_size))
+                if args.use_cuda:                    
+                    cell_states = cell_states.cuda()
 
                 # Zero out gradients
                 net.zero_grad()
@@ -218,16 +231,23 @@ def train(args):
                     dataset_data = [720, 576]
 
                 # Compute grid masks
-                grid_seq = getSequenceGridMask(x_seq, dataset_data, args.neighborhood_size, args.grid_size)
+                grid_seq = getSequenceGridMask(x_seq, dataset_data, args.neighborhood_size, args.grid_size, args.use_cuda)
 
                 # Get node features and nodes present from stgraph
                 nodes, _, nodesPresent, _ = stgraph.getSequence(sequence)
 
+
                 # Construct variables
-                nodes = Variable(torch.from_numpy(nodes).float()).cuda()
+                nodes = Variable(torch.from_numpy(nodes).float())
+                if args.use_cuda:                    
+                    nodes = nodes.cuda()
                 numNodes = nodes.size()[1]
-                hidden_states = Variable(torch.zeros(numNodes, args.rnn_size)).cuda()
-                cell_states = Variable(torch.zeros(numNodes, args.rnn_size)).cuda()
+                hidden_states = Variable(torch.zeros(numNodes, args.rnn_size))
+                if args.use_cuda:                    
+                    hidden_states = hidden_states.cuda()
+                cell_states = Variable(torch.zeros(numNodes, args.rnn_size))
+                if args.use_cuda:                    
+                    cell_states = cell_states.cuda()
 
                 # Forward prop
                 outputs, _, _ = net(nodes[:-1], grid_seq[:-1], nodesPresent[:-1], hidden_states, cell_states)
@@ -241,16 +261,17 @@ def train(args):
             loss_batch = loss_batch / dataloader.batch_size
             loss_epoch += loss_batch
 
-        loss_epoch = loss_epoch / dataloader.valid_num_batches
+        if dataloader.valid_num_batches != 0:            
+            loss_epoch = loss_epoch / dataloader.valid_num_batches
 
-        # Update best validation loss until now
-        if loss_epoch < best_val_loss:
-            best_val_loss = loss_epoch
-            best_epoch = epoch
+            # Update best validation loss until now
+            if loss_epoch < best_val_loss:
+                best_val_loss = loss_epoch
+                best_epoch = epoch
 
-        print('(epoch {}), valid_loss = {:.3f}'.format(epoch, loss_epoch))
-        print('Best epoch', best_epoch, 'Best validation loss', best_val_loss)
-        log_file_curve.write(str(loss_epoch)+'\n')
+            print('(epoch {}), valid_loss = {:.3f}'.format(epoch, loss_epoch))
+            print('Best epoch', best_epoch, 'Best validation loss', best_val_loss)
+            log_file_curve.write(str(loss_epoch)+'\n')
 
         # Save the model after each epoch
         print('Saving model')
@@ -260,9 +281,10 @@ def train(args):
             'optimizer_state_dict': optimizer.state_dict()
         }, checkpoint_path(epoch))
 
-    print('Best epoch', best_epoch, 'Best validation Loss', best_val_loss)
-    # Log the best epoch and best validation loss
-    log_file.write(str(best_epoch)+','+str(best_val_loss))
+    if dataloader.valid_num_batches != 0:        
+        print('Best epoch', best_epoch, 'Best validation Loss', best_val_loss)
+        # Log the best epoch and best validation loss
+        log_file.write(str(best_epoch)+','+str(best_val_loss))
 
     # Close logging files
     log_file.close()
