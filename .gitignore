@@ -23,3 +23,6 @@ save_*
 plot_*
 copy_from_server.sh
 log
+# do not include the classified data :)
+*.txt
+*.csv
