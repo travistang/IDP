@@ -11,6 +11,7 @@ class Solver:
 
         self.social_lstm = Solver._create_social_lstm(num_units, num_neighbours, input_length, output_length, predict_gaussian)
 
+        # input and output for this particular config
         self.input_placeholder = tf.placeholder(
             dtype = tf.float64,
             shape = (None, self.num_neighbours + 1, self.input_length, 2)

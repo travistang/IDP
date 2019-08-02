@@ -60,6 +60,10 @@ class Database:
         )
 
     def get_car_near_point_at_timestamp(self, start_time, num_step, point, distance):
+        '''
+            Given a particular point (x,y), a starting_time (T), and the distance to consider...
+            return all the IDs of the vehicles that have a trajectory close to the given point within that time window (start_time + num_step)
+        '''
         data = self.data
         target_X, target_Y = point
         return set(
@@ -71,6 +75,9 @@ class Database:
         )
 
     def get_cars_within_time_frame(self, start_time, num_step):
+        '''
+            Given the time window (start_time, start_time + step), return the IDs of all vehicles existing in that time window.
+        '''
         data = self.data
         id_with_size = data[
             (data.timestamp >= start_time) &
@@ -84,7 +91,7 @@ class Database:
     '''
     def get_batch(self,num_data = 128,input_length = 8, output_length = 4):
         '''
-            Get a batch for training regular LSTM model
+            Get a batch for training REGULAR LSTM model
         '''
         data = self.data
         # evaluate the total length of series required
@@ -135,7 +142,8 @@ class Database:
                               neighbours_to_consider = 4,
                               input_length = 8,
                               output_length = 4,
-                              distance = 2):
+                              distance = 2,
+                              ignore_neighbours = []):
         '''
             Get a batch for the social LSTM input
             The input should be of size (
@@ -156,35 +164,57 @@ class Database:
         num_steps = input_length + output_length
         max_time = data.timestamp.max()
         possible_timestamps = [ts for ts in set(data.timestamp) if ts + input_length + output_length <= max_time]
-        for batch_index in range(num_data):
-            # choose a random timestamp to start with
-            start_time = choice(possible_timestamps)
-            # get ID of all cars that are in particular frame
-            cars_id_in_time_frame = self.get_cars_within_time_frame(start_time, num_steps)
-            # choose one of the ID's of the car
-            target_car_id = choice(list(cars_id_in_time_frame))
-            # get the trajectory of cars
-            target_car_trajectory = self.get_trajectory_of_car(target_car_id, start_time, num_steps)
-            # now the car is chosen, pick it's neighbours
-            neighbours = []
-            for cars_id in cars_id_in_time_frame:
-                # skip conditions
-                if cars_id == target_car_id or len(neighbours) == neighbours_to_consider:
-                    continue
-                # pick out the trajectory and evaluate if it should be added to the neighbout
-                trajectory = self.get_trajectory_of_car(cars_id, start_time, num_steps)
-                if self.is_trajectory_close(target_car_trajectory, trajectory, distance):
-                    neighbours.append(trajectory)
 
-            # then pad the missing trajectory
-            for i in range(neighbours_to_consider - len(neighbours)):
-                neighbours.append(self.padding_trajectory(num_steps))
+        # sample time to start with (non-repeating)
+        start_times = sample(possible_timestamps, num_data)
+        # get all the vehicles that are in those timestamps, ID's may repeat...
+        cars_id_in_time_frames = [
+            (st, self.get_cars_within_time_frame(st, num_steps))
+            for st in start_times]
+        # for each starting time, choose 1 car from it
+        target_car_ids = [
+            (st, choice(list(cars_id_in_time_frame)))
+            for st, cars_id_in_time_frame in cars_id_in_time_frames]
+        # for each of the car and id, get all their neighbours
+        # so (st, car_id) -> [(st, car_id, car_trajectory)]
+        target_car_trajectories = [
+            (st, car_id, self.get_trajectory_of_car(car_id, st, num_steps) )
+            for st, car_id in target_car_ids]
 
-            # then concat everything, the first one being the target, the rest being the neighbour (and paddings)
-            tensor = np.array([target_car_trajectory] + neighbours)
+        # now better use for-loop from here
+        for i, (st, target_car_id, target_trajectory) in enumerate(target_car_trajectories):
+            # get the list of ids of cards in that particular st provided that it's not target car's id
+            possible_neighbours = [id for id in cars_id_in_time_frames[i][-1] if id != target_car_id]
+            # then take out their trajectories
+            neighbour_trajectories = [
+                self.get_trajectory_of_car(neighbour_id, st, num_steps)
+                for neighbour_id in possible_neighbours]
+
+            # find all neighbours with trajectories close enough to the target
+            neighbour_trajectories = list(
+                filter(
+                    lambda traj: self.is_trajectory_close(traj, target_trajectory, distance),
+                    neighbour_trajectories
+                )
+            )
+
+            # if there are this many neighbours, just take out random ones
+            if len(neighbour_trajectories) >= neighbours_to_consider:
+                neighbour_trajectories = sample(neighbour_trajectories, neighbours_to_consider)
+
+            else:
+                # there are not enough neighbours, add padding trajectories to maintain the shape
+                neighbour_trajectories = neighbour_trajectories + [self.padding_trajectory(num_steps)] * (neighbours_to_consider - len(neighbour_trajectories))
+
+            # merge all trajectories, make sure the target is the first one in the tensor
+            tensor = np.array([target_trajectory] + neighbour_trajectories)
+            # check the final shape of this data
             assert tensor.shape == (neighbours_to_consider + 1, num_steps, 2)
             batch.append(tensor)
 
+        # finally merge all data into a batch
         batch = np.array(batch)
+        # verify the shape
         assert batch.shape == (num_data, neighbours_to_consider + 1, num_steps, 2)
+        # and we're done
         return batch

@@ -16,7 +16,7 @@ if __name__ == '__main__':
     database = Database()
     solver = Solver(**config)
 
-    data_generator = database.get_social_lstm_train_data(num_data = 16)
+    data_generator = database.get_social_lstm_train_data(num_data = 8)
 
     num_epoch = 10
     num_batches = 20
